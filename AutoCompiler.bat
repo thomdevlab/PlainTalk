@@ -4,7 +4,7 @@ echo =====================================
 echo.
 
 :: Configuration URLs
-set URL_NORMAL=https://raw.githubusercontent.com/plaintalk/plaintalk/main/src/
+set URL_NORMAL=https://github.com/thomdevlab/PlainTalk/archive/refs/heads/b1.zip
 set URL_PREBUILT=https://github.com/plaintalk/plaintalk/releases/download/v1.0/PlainTalk_b1.zip
 
 :: Check for PlainTalk files
