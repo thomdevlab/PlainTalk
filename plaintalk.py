@@ -10,11 +10,66 @@ from dataclasses import dataclass
 from pathlib import Path
 
 
+# Error message examples for varied feedback
+ERROR_EXAMPLES = {
+    "expression": [
+        "Try a number like 42 or 3.14",
+        "Try a quoted string like 'Hello, world!' or \"Hello\"",
+        "Try a box name like userAge or totalScore",
+        "Try a phrase like 'the sum of a and b'",
+        "Try a phrase like 'the product of x and y'",
+        "Try a phrase like 'the square root of 16'",
+        "Try a constant like 'the value of pi' or 'the current date'",
+    ],
+    "condition": [
+        "Try something like 'userAge is greater than 18'",
+        "Try something like 'score is less than 100'",
+        "Try something like 'name is equal to \"John\"'",
+        "Try combining conditions with 'and also' or 'or else'",
+        "Try something like 'x is at least 0 and also x is at most 10'",
+        "Try something like 'password is not equal to \"12345\"'",
+    ],
+    "statement": [
+        "Try 'Store the value 25 into a box called userAge.'",
+        "Try 'Print \"Hello, world!\"'",
+        "Try 'Ask the user for \"Enter your name\" and store it into a box called userName.'",
+        "Try 'Repeat the following steps 5 times:' followed by indented steps",
+        "Try 'If userAge is greater than 18, then:' followed by indented steps",
+        "Try 'Create an empty collection called myList.'",
+    ],
+    "store_statement": [
+        "Try 'Store the value 25 into a box called userAge.'",
+        "Try 'Store the value \"Hello\" into a box called greeting.'",
+        "Try 'Store the value 3.14 into a box called pi.'",
+        "Use 'called' instead of 'named' - 'Store the value 5 into a box called count.'",
+    ],
+    "unclosed_quote": [
+        "Make sure every opening quote has a matching closing quote",
+        "Check for missing quotes at the end of the line",
+        "Ensure both single and double quotes are properly paired",
+    ],
+    "parameter_name": [
+        "Parameter names must start with a letter and contain only letters, numbers, and underscores",
+        "Try names like 'a', 'b', 'userName', 'item_count'",
+        "Avoid using spaces or special characters in parameter names",
+    ],
+}
+
+
 class PlainTalkError(Exception):
-    def __init__(self, message: str, *, line_no: int | None = None, line: str | None = None):
+    def __init__(self, message: str, *, line_no: int | None = None, line: str | None = None, error_type: str = None):
         super().__init__(message)
         self.line_no = line_no
         self.line = line
+        self.error_type = error_type
+
+
+def get_varied_suggestion(error_type: str) -> str:
+    """Get a varied suggestion based on error type"""
+    if error_type in ERROR_EXAMPLES:
+        examples = ERROR_EXAMPLES[error_type]
+        return random.choice(examples)
+    return "Please check the PlainTalk documentation for correct syntax."
 
 
 def _clean_line(line: str) -> str:
@@ -49,7 +104,7 @@ def _split_args_english(text: str) -> list[str]:
                 else:
                     j += 1
             if j >= len(text):
-                raise PlainTalkError("I found a quote that never closes. Please close the string with a matching quote.")
+                raise PlainTalkError("I found a quote that never closes.", error_type="unclosed_quote")
             tokens.append(text[i : j + 1])
             i = j + 1
         else:
@@ -77,7 +132,7 @@ def _split_args_english(text: str) -> list[str]:
 def parse_expression(expr: str) -> str:
     expr = expr.strip()
     if not expr:
-        raise PlainTalkError("I was expecting an expression, but I found nothing.")
+        raise PlainTalkError("I was expecting an expression, but I found nothing.", error_type="expression")
 
     # Strings and numbers pass through.
     if re.fullmatch(r"-?\d+(\.\d+)?", expr):
@@ -323,15 +378,15 @@ def parse_expression(expr: str) -> str:
         return expr
 
     raise PlainTalkError(
-        "I couldn't understand that expression. "
-        "Try a number, a quoted string, a box name, or a phrase like 'the sum of a and b'."
+        "I couldn't understand that expression.",
+        error_type="expression"
     )
 
 
 def parse_condition(cond: str) -> str:
     cond = cond.strip()
     if not cond:
-        raise PlainTalkError("I was expecting a condition, but I found nothing.")
+        raise PlainTalkError("I was expecting a condition, but I found nothing.", error_type="condition")
 
     # Logical composition (lowest precedence first).
     # We split on the FIRST occurrence to keep parsing predictable.
@@ -387,8 +442,8 @@ def parse_condition(cond: str) -> str:
         return f"(not bool({parse_expression(m.group(1))}))"
 
     raise PlainTalkError(
-        "I couldn't understand that condition. "
-        "Try something like 'userAge is greater than 18', or combine conditions with 'and also' / 'or else'."
+        "I couldn't understand that condition.",
+        error_type="condition"
     )
 
 
@@ -407,7 +462,7 @@ def transpile_lines(lines: list[str]) -> str:
     def emit(py: str) -> None:
         out.append(" " * (4 * len(blocks)) + py)
 
-    def polite_error(line_no: int, original: str, message: str, suggestion: str | None = None) -> PlainTalkError:
+    def polite_error(line_no: int, original: str, message: str, suggestion: str | None = None, error_type: str = None) -> PlainTalkError:
         hint = ""
         if suggestion:
             hint = f"\nSuggestion: {suggestion}"
@@ -415,6 +470,7 @@ def transpile_lines(lines: list[str]) -> str:
             f"On line {line_no}, I couldn't follow this sentence:\n  {original}\n{message}{hint}",
             line_no=line_no,
             line=original,
+            error_type=error_type if not suggestion else None  # Don't set error_type if custom suggestion provided
         )
 
     for idx, raw in enumerate(lines, start=1):
@@ -546,7 +602,7 @@ def transpile_lines(lines: list[str]) -> str:
                         idx,
                         original,
                         f"I couldn't use '{p}' as a parameter name.",
-                        "To define a function called add that takes a and b:",
+                        error_type="parameter_name"
                     )
             emit(f"def {fn}({', '.join(params)}):")
             blocks.append(Block(kind="function", indent=len(blocks)))
@@ -560,7 +616,7 @@ def transpile_lines(lines: list[str]) -> str:
                 idx,
                 original,
                 str(e),
-                "Store the value 25 into a box called userAge.",
+                error_type=e.error_type or "statement"
             )
         emit(py_stmt)
 
@@ -580,6 +636,13 @@ def _transpile_single_statement(line: str, line_no: int, original: str) -> str:
     m = re.fullmatch(r"Store the value (.+) into a box called ([A-Za-z_]\w*)", line, flags=re.IGNORECASE)
     if m:
         return f"{m.group(2)} = {parse_expression(m.group(1))}"
+    
+    # Detect store-like patterns for better error messages
+    if re.search(r"Store the value", line, flags=re.IGNORECASE):
+        raise PlainTalkError(
+            "I detected a 'Store the value' pattern but the syntax is incorrect.",
+            error_type="store_statement"
+        )
 
     # Print
     m = re.fullmatch(r"Print (.+)", line, flags=re.IGNORECASE)
@@ -773,8 +836,8 @@ def _transpile_single_statement(line: str, line_no: int, original: str) -> str:
         return f"{fn}({', '.join(args)})"
 
     raise PlainTalkError(
-        "I couldn't match this sentence to a known PlainTalk rule. "
-        "Please rewrite it using one of the documented patterns."
+        "I couldn't match this sentence to a known PlainTalk rule.",
+        error_type="statement"
     )
 
 
@@ -797,7 +860,10 @@ def main(argv: list[str]) -> int:
         try:
             py = transpile_lines([ns.command])
         except PlainTalkError as e:
-            print(str(e), file=sys.stderr)
+            error_msg = str(e)
+            if e.error_type and "Suggestion:" not in error_msg:
+                error_msg += f"\nSuggestion: {get_varied_suggestion(e.error_type)}"
+            print(error_msg, file=sys.stderr)
             return 2
         
         # Execute the command
@@ -822,7 +888,10 @@ def main(argv: list[str]) -> int:
     try:
         py = transpile_file(ns.source)
     except PlainTalkError as e:
-        print(str(e), file=sys.stderr)
+        error_msg = str(e)
+        if e.error_type and "Suggestion:" not in error_msg:
+            error_msg += f"\nSuggestion: {get_varied_suggestion(e.error_type)}"
+        print(error_msg, file=sys.stderr)
         return 2
 
     if ns.emit:
